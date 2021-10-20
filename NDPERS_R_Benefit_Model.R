@@ -315,20 +315,4 @@ NC_aggregate
 
 ########################
 ########################
-library(parallel)
-n.cores <- detectCores()
-n.cores
-
-x.list <- sapply(1:10000, list)
-
-x.list
-system.time({
-  cluster <- makeCluster(n.cores)
-  parLapply(cluster, x.list, function(x){sample(1:1000, 2000, replace = T)})}
-)
-
-system.time(
-  
-  lapply(x.list, function(x){sample(1:1000, 2000, replace = T)})
-)
 #########
