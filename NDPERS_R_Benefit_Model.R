@@ -2,7 +2,7 @@ rm(list = ls())
 library("readxl")
 library(tidyverse)
 library(zoo)
-setwd(getwd())
+#setwd(getwd())
 
 FileName <- '/Users/anilniraula/databaseR/NDPERS_BM_Inputs.xlsx'
 #FileName <- "https://github.com/ANiraula/NDPERS_BModel/blob/main/NDPERS_BM_Inputs.xlsx?raw=true"
@@ -35,6 +35,7 @@ FemaleMP <- read_excel(FileName, sheet = 'MP-2019_Female')#Updated* (to MP-2019)
 SalaryGrowth <- read_excel(FileName, sheet = "Salary Growth")#Updated* (How to combined YOS & AGE increases?)
 ### Addition ###
 SalaryGrowthYOS <- read_excel(FileName, sheet = "Salary Growth YOS")#Added* (to combine YOS & AGE increases)
+
 ################
 SalaryEntry <- read_excel(FileName, sheet = "Salary and Headcount") %>% #Updated*
 select(entry_age, start_sal, count_start)#Updated*
@@ -50,17 +51,46 @@ RetirementRates <- read_excel(FileName, sheet = 'Retirement Rates')#Updated*
 #scale.ret.male <- 1.03
 #scale.act.female <- 0.92 
 #scale.ret.female <- 1.01 
-
+#NormalRetRuleAge
 #Function for determining retirement eligibility (including normal retirement, unreduced early retirement, and reduced early retirement)
 
-### Updated* ###
+################
+# Main rule: Retirement Eligibility
+################
+
 IsRetirementEligible <- function(Age, YOS){
-  Check = ifelse((Age >= NormalRetAgeI) & (YOS >= NormalYOSI) |
-                  (Age >= NormalRetRuleAge) & (YOS + Age >= NormalRetRule) |
-                  (YOS + Age >= ReduceRetRule) & Age >= ReduceRetAge, TRUE, FALSE)
+  Check = ifelse((Age >= NormalRetAgeI & YOS >= NormalYOSI) |
+                 (Age >= NormalRetRuleAge) & (YOS + Age >= NormalRetRule) |
+                 (Age >= NormalRetRuleAge & YOS >= NormalYOSI) |
+                 (YOS + Age >= NormalRetRule) & ((Age-YOS)>=20), TRUE, FALSE)
   return(Check)
 }
+
 ################
+# New rule: 3 Retirement Types
+################
+
+RetirementType <- function(Age, YOS){
+  
+  Check = ifelse((Age >= NormalRetAgeI & YOS >= NormalYOSI), "Normal No Rule of 90",
+                ifelse((Age >= NormalRetRuleAge) & (YOS + Age >= NormalRetRule), "Normal With Rule of 90",
+                ifelse((Age >= NormalRetRuleAge & YOS >= NormalYOSI) |
+                         (YOS + Age >= NormalRetRule) & ((Age-YOS)>=20), "Reduced","No")))
+  
+ return(Check)
+}
+
+#### Considering using new rule to get Min Normal Retirement Age
+# NormalRetirement <- function(data, Age, YOS){
+#     data <- data %>% group_by(entry_age) %>%
+#     mutate(Check = ifelse(IsRetirementEligible(Age,YOS) == T, 
+#                    ifelse(RetirementType(Age,YOS) == "Normal With Rule of 90" |
+#                           RetirementType(Age,YOS) == "Normal With Rule of 90",
+#                         min(Age),0),0))
+#     
+#     return(Check)
+# }
+
 
 #These rates dont change so they're outside the function
 #Transform base mortality rates and mortality improvement rates
@@ -114,7 +144,7 @@ MortalityTable <- MortalityTable %>%
                               PubG_2010_healthy_retiree_female * ScaleMultipleFemaleRet) * MPcumprod_female,
          mort = (mort_male + mort_female)/2) %>% 
          #Recalcualting average
-  filter(Years >= 2021, entry_age >= 25) %>% 
+  filter(Years >= 2021, entry_age >= 20) %>% 
   ungroup()
 
 #############
@@ -134,46 +164,36 @@ SeparationRates <- expand_grid(Age, YOS) %>%
   filter(entry_age %in% SalaryEntry$entry_age) %>% 
   arrange(entry_age, Age) %>% 
   left_join(TerminationRateAfter5, by = "Age") %>%
-  left_join(TerminationRateBefore5, by = "YOS") %>% 
-  left_join(RetirementRates, by = c("Age"))
+  left_join(TerminationRateBefore5, by = c("YOS","Age")) %>% # Joining by YOS & AGE
+  left_join(RetirementRates, by = c("Age")) %>%
+  ### Additions ###
+  mutate_all(as.numeric) %>% 
+  replace(is.na(.), 0) %>%
+  mutate(TermBefore5 = c(TermBefore5Under30 + TermBefore5B3039+ TermBefore5Over39))#Combine 3 Term rates into 1 final column
 
-#colnames(SeparationRates)
+#View(SeparationRates)
+
 ######################
+
+#View(SeparationRates %>% select(RetirementType(SeparationRates$Age,SeparationRates$YOS)[1]))
 
 #If you're retirement eligible, use the retirement rates, then checks YOS < 5 and use the regular termination rates
 SeparationRates <- SeparationRates %>% 
   mutate(retirement_cond = IsRetirementEligible(Age,YOS),
-         SepRateMale = ifelse(retirement_cond == T, RetRate,
-                              ifelse(YOS < 5, TermBefore5Male, TermAfter5Male)),
-         SepRateFemale = ifelse(retirement_cond == T,RetRate,
-                                ifelse(YOS < 5, TermBefore5Female, TermAfter5Female)),
+         retirement_type = RetirementType(Age,YOS),
+         
+         SepRateMale = ifelse(retirement_cond == T, ifelse(retirement_type == "Normal With Rule of 90", UnreducedRule90,
+                              ifelse(retirement_type == "Normal No Rule of 90", UnreducedNoRule90,Reduced)), #Using 3 ifelse statements for 3 retirement conditions                 
+         ifelse(YOS < 5, TermBefore5, TermAfter5)),
+         SepRateFemale = ifelse(retirement_cond == T, ifelse(retirement_type == "Normal With Rule of 90", UnreducedRule90,
+                                                             ifelse(retirement_type == "Normal No Rule of 90", UnreducedNoRule90,Reduced)), #Using 3 ifelse statements for 3 retirement conditions                
+                                ifelse(YOS < 5, TermBefore5, TermAfter5)),
          SepRate = ((SepRateMale+SepRateFemale)/2)) %>% 
   group_by(entry_age) %>% 
   mutate(RemainingProb = cumprod(1 - lag(SepRate, default = 0)),
          SepProb = lag(RemainingProb, default = 1) - RemainingProb) %>% 
   ungroup()
 
-#View(SeparationRates)
-
-#How to make sure YOS base separation + Salary growth is applied (joint + ultimate column?)
-
-#Filter out unecessary values
-SeparationRates <- SeparationRates %>% select(Age,YOS,SepProb)
-
-#colnames(SalaryGrowth)[2] <- "YOS"
-#Create a long-form table of Age and YOS and merge with salary data
-SalaryData <- expand_grid(Age, YOS) %>% 
-  mutate(entry_age = Age - YOS) %>%    #Add entry age
-  filter(entry_age %in% SalaryEntry$entry_age) %>% 
-  arrange(entry_age) %>% 
-  left_join(SalaryEntry, by = "entry_age") %>% 
-  left_join(SalaryGrowthYOS, by = c("YOS")) %>%
-  left_join(SalaryGrowth, by = c("Age")) %>%
-  ### Additions ###
-  mutate_all(as.numeric) %>% 
-  replace(is.na(.), 0)   %>%
-  mutate(salary_increase = ifelse(YOS < 3, salary_increase_yos,salary_increase_age))
-  ######################
 
 #Updated (Added SalaryGrowth YOS tab + rule to use YOS vs. Age)
 #%>%
@@ -193,9 +213,22 @@ cumFV <- function(interest, cashflow){
   return(cumvalue)
 }
 
+#colnames(SalaryGrowth)[2] <- "YOS"
+#Create a long-form table of Age and YOS and merge with salary data
+SalaryData <- expand_grid(Age, YOS) %>% 
+  mutate(entry_age = Age - YOS) %>%    #Add entry age
+  filter(entry_age %in% SalaryEntry$entry_age) %>% 
+  arrange(entry_age) %>% 
+  left_join(SalaryEntry, by = "entry_age") %>% 
+  left_join(SalaryGrowthYOS, by = c("YOS")) %>%
+  left_join(SalaryGrowth, by = c("Age")) %>%
+  ### Additions ###
+  mutate_all(as.numeric) %>% 
+  replace(is.na(.), 0)   %>%
+  mutate(salary_increase = ifelse(YOS < 3, salary_increase_yos,salary_increase_age))
 
 
-#################
+#######################################
 #################
 #################
 #################
@@ -238,15 +271,46 @@ AnnFactorData <- MortalityTable %>%
 #Age + YOS >= 80
 #Reduced retirement benefit when:
 #Age 60 and 10 YOS: reduced by 3% per year prior to age 62
-ReducedFactor <- expand_grid(20:120,0:100)
-colnames(ReducedFactor) <- c('RetirementAge','YOS')
+#ReducedFactor <- expand_grid(20:120,0:100)
+#colnames(ReducedFactor) <- c('RetirementAge','YOS')
+
+
+
+### Additions -> Calculating:
+### 1. Earliest Age at Early Retirement
+### 2. Retirement Type
+### 3. Calculating Years between Early Retirement & Normal Retirement
+### 4. Before Age 60 (w/ rule of 90) it's 60 - Age, After Age 59, it's 90 - (AGE + YOS)
+
+#Add entry_age to AnnFactorData + keep toNormRetYears
+########
+ReducedFactor <- expand_grid(Age, YOS)
+  
+ReducedFactor$FirstRetAge <- ifelse(IsRetirementEligible(ReducedFactor$Age,ReducedFactor$YOS) == T & 
+                                      RetirementType(ReducedFactor$Age,ReducedFactor$YOS) == "Reduced",
+                                        ReducedFactor$Age,0)
+
+ReducedFactor$RetType <- RetirementType(ReducedFactor$Age,ReducedFactor$YOS)
+
+
+ReducedFactor$YearsNormRet <- ifelse(ReducedFactor$RetType == "Reduced" & ReducedFactor$Age < 60,
+                                (60- ReducedFactor$Age),
+                        ifelse(ReducedFactor$RetType == "Reduced" & ReducedFactor$Age >= 60,
+                               90-(ReducedFactor$Age+ReducedFactor$YOS),0))
+
+#### Saving results into ReducedFactor 
 
 ### Updated* ###
-#((2/3*12/100) Per Year between 60 and 65) 
+#((2/3*12/100) Per Years untill Normal Retirement (if qualifies for Reduced)) 
+
+##Adjusting code to use calculated YearsToNormRet column for early ret. penalties
 ReducedFactor <- ReducedFactor %>% 
-  mutate(RF = ifelse(RetirementAge >= NormalRetAgeI & YOS >= NormalYOSI |
-                       RetirementAge >= NormalRetRuleAge & (YOS + RetirementAge >= NormalRetRule), 1,
-                     ifelse(RetirementAge >= ReduceRetAge, pmin(1 - ((2/3*12/100)*(NormalRetAgeI - RetirementAge)),1), 0)))
+  mutate(RF = ifelse(RetType  == "Reduced",
+                            (1 - ((2/3*12/100)*(YearsNormRet))),
+                     ifelse(RetType  == "No",0,1))) %>%
+  mutate(RF = ifelse(RF <0, 0, RF)) %>%
+  rename(RetirementAge = Age)
+
 #View(ReducedFactor)
 
 # ReducedFactor_test <- ReducedFactor %>% pivot_wider(names_from = YOS, values_from = RF)
@@ -259,7 +323,7 @@ BenefitsTable <- expand_grid(Age, YOS, RetirementAge) %>%
   filter(entry_age %in% SalaryEntry$entry_age) %>% 
   arrange(entry_age, Age, RetirementAge) %>% 
   left_join(SalaryData, by = c("Age", "YOS", "entry_age")) %>% 
-  left_join(ReducedFactor, by = c("RetirementAge", "YOS")) %>% 
+  left_join(ReducedFactor, by = c("RetirementAge", "YOS")) %>%
   left_join(AnnFactorData %>% select(Age, entry_age, surv_DR, AnnuityFactor), by = c("RetirementAge" = "Age", "entry_age")) %>%
   #Rename surv_DR and AF to make clear that these variables are at retirement
   rename(surv_DR_ret = surv_DR, AF_Ret = AnnuityFactor) %>% 
@@ -274,8 +338,6 @@ BenefitsTable <- expand_grid(Age, YOS, RetirementAge) %>%
 
 #)
 
-#View(BenefitsTable %>% filter(entry_age > 22))
-
 #The max benefit is done outside the table because it will be merged with Salary data
 OptimumBenefit <- BenefitsTable %>% 
   group_by(entry_age, Age) %>% 
@@ -283,18 +345,41 @@ OptimumBenefit <- BenefitsTable %>%
   mutate(MaxBenefit = ifelse(is.na(MaxBenefit), 0, MaxBenefit)) %>% 
   ungroup()
 
-#View(SalaryData)
+
+#### PVPWealth adjusted for inflation
+SalaryData2 <- SalaryData %>% 
+  left_join(OptimumBenefit, by = c("Age", "entry_age")) %>% 
+  left_join(SeparationRates, by = c("Age", "YOS")) %>%
+  rename(entry_age = entry_age.x) %>% 
+  mutate(PenWealth = pmax(DBEEBalance,MaxBenefit),
+         PVPenWealth = PenWealth/(1 + assum_infl)^YOS,
+         PVCumWage = CumulativeWage/(1 + assum_infl)^YOS ) %>%
+  select(-entry_age.y)
 
 #Combine optimal benefit with employee balance and calculate the PV of future benefits and salaries 
 SalaryData <- SalaryData %>% 
   left_join(OptimumBenefit, by = c("Age", "entry_age")) %>% 
   left_join(SeparationRates, by = c("Age", "YOS")) %>%
+  rename(entry_age = entry_age.x) %>% 
   mutate(PenWealth = pmax(DBEEBalance,MaxBenefit),
          PVPenWealth = PenWealth/(1 + ARR)^YOS * SepProb,
-         PVCumWage = CumulativeWage/(1 + ARR)^YOS * SepProb) 
+         PVCumWage = CumulativeWage/(1 + ARR)^YOS * SepProb) %>%
+select(-entry_age.y)
 
-#View(SalaryData)
 
+SalaryData2 <- data.frame(SalaryData2)
+SalaryData2$entry_age <- as.numeric(SalaryData2$entry_age)
+SalaryData2 <- SalaryData2 %>% filter(entry_age == 22)
+SalaryData2 <- SalaryData2 %>% filter(Age < 81)
+#View(SalaryData2)
+
+ggplot(SalaryData2, aes(Age,PVPenWealth/1000))+
+  geom_line(size = 1, color = "blue")+
+  theme_bw()+
+  scale_x_continuous(breaks = seq(0, 80, by = 10),labels = function(x) paste0(x), 
+                     name = "Age (Entry age at 27)", expand = c(0,0)) + 
+  scale_y_continuous(breaks = seq(0, 5000, by = 100),labels = function(x) paste0("$",x), 
+                     name = "Present Value of Pension Wealth ($Thousands)", expand = c(0,0)) 
 #Calculate normal cost rate for each entry age
 NormalCost <- SalaryData %>% 
   group_by(entry_age) %>% 
@@ -303,16 +388,10 @@ NormalCost <- SalaryData %>%
 
 #View(NormalCost)
 
-#View(NormalCost)
-
 #Calculate the aggregate normal cost
 NC_aggregate <- sum(NormalCost$normal_cost * SalaryEntry$start_sal * SalaryEntry$count_start, na.rm=T)/
   sum(SalaryEntry$start_sal * SalaryEntry$count_start, na.rm=T)
 
-
 #Calculate the aggregate normal cost
 NC_aggregate
 
-########################
-########################
-#########
