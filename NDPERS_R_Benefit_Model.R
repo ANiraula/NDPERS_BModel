@@ -350,8 +350,10 @@ OptimumBenefit <- BenefitsTable %>%
   mutate(MaxBenefit = ifelse(is.na(MaxBenefit), 0, MaxBenefit)) %>% 
   ungroup()
 
-
+####### NPV Benefit Accrual #######
 #### PVPWealth adjusted for inflation
+#Combine optimal benefit with employee balance and calculate the PV of future benefits and salaries 
+#####################################
 SalaryData2 <- SalaryData %>% 
   left_join(OptimumBenefit, by = c("Age", "entry_age")) %>% 
   left_join(SeparationRates, by = c("Age", "YOS")) %>%
@@ -361,7 +363,27 @@ SalaryData2 <- SalaryData %>%
          PVCumWage = CumulativeWage/(1 + assum_infl)^YOS ) %>%
   select(-entry_age.y)
 
-#Combine optimal benefit with employee balance and calculate the PV of future benefits and salaries 
+
+SalaryData2 <- data.frame(SalaryData2)
+SalaryData2$entry_age <- as.numeric(SalaryData2$entry_age)
+SalaryData2 <- SalaryData2 %>% filter(entry_age == 22)
+SalaryData2 <- SalaryData2 %>% filter(Age < 81)
+#View(SalaryData2)
+
+## Graphing PWealth accrual
+ggplot(SalaryData2, aes(Age,PVPenWealth/1000))+
+  geom_line(size = 1, color = "blue")+
+  theme_bw()+
+  scale_x_continuous(breaks = seq(0, 80, by = 10),labels = function(x) paste0(x), 
+                     name = "Age (Entry age at 27)", expand = c(0,0)) + 
+  scale_y_continuous(breaks = seq(0, 5000, by = 100),labels = function(x) paste0("$",x), 
+                     name = "Present Value of Pension Wealth ($Thousands)", expand = c(0,0)) 
+##################################
+
+####### Normal Cost #######
+#### PVPWealth adjusted for DR + COLA
+#####################################
+
 SalaryData <- SalaryData %>% 
   left_join(OptimumBenefit, by = c("Age", "entry_age")) %>% 
   left_join(SeparationRates, by = c("Age", "YOS")) %>%
@@ -372,19 +394,6 @@ SalaryData <- SalaryData %>%
 select(-entry_age.y)
 
 
-SalaryData2 <- data.frame(SalaryData2)
-SalaryData2$entry_age <- as.numeric(SalaryData2$entry_age)
-SalaryData2 <- SalaryData2 %>% filter(entry_age == 22)
-SalaryData2 <- SalaryData2 %>% filter(Age < 81)
-#View(SalaryData2)
-
-ggplot(SalaryData2, aes(Age,PVPenWealth/1000))+
-  geom_line(size = 1, color = "blue")+
-  theme_bw()+
-  scale_x_continuous(breaks = seq(0, 80, by = 10),labels = function(x) paste0(x), 
-                     name = "Age (Entry age at 27)", expand = c(0,0)) + 
-  scale_y_continuous(breaks = seq(0, 5000, by = 100),labels = function(x) paste0("$",x), 
-                     name = "Present Value of Pension Wealth ($Thousands)", expand = c(0,0)) 
 #Calculate normal cost rate for each entry age
 NormalCost <- SalaryData %>% 
   group_by(entry_age) %>% 
@@ -399,4 +408,4 @@ NC_aggregate <- sum(NormalCost$normal_cost * SalaryEntry$start_sal * SalaryEntry
 
 #Calculate the aggregate normal cost
 NC_aggregate
-
+################################
