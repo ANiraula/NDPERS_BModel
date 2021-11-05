@@ -1,4 +1,4 @@
 # NDPERS_BModel
 
-## Excel Mountain of Debt Plot for PERSI plan
-  ![Original Debt Plot - PERSI](NDPERS_PWealth_27Entry.png)
+## R PWealth Accrual Plot for NDPERS (Enty at Age 27)
+  ![Original PWealth Plot - NDPERS](NDPERS_PWealth_27Entry.png)
