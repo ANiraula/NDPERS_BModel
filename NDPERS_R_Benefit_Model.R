@@ -10,7 +10,7 @@ library(zoo)
 #setwd(getwd())
 
 FileName <- 'NDPERS_BM_Inputs.xlsx'
-FileName <- '/Users/anilniraula/databaseR/NDPERS_BM_Inputs.xlsx'
+# FileName <- '/Users/anilniraula/databaseR/NDPERS_BM_Inputs.xlsx'
 #FileName <- "https://github.com/ANiraula/NDPERS_BModel/blob/main/NDPERS_BM_Inputs.xlsx?raw=true"
 
 #urlfile="https://github.com/ANiraula/NDPERS_BModel/blob/main/NDPERS_BM_Inputs.xlsx?raw=true"
@@ -68,7 +68,7 @@ IsRetirementEligible <- function(Age, YOS){
   Check = ifelse((Age >= NormalRetAgeI & YOS >= NormalYOSI) |
                  (Age >= NormalRetRuleAge) & (YOS + Age >= NormalRetRule) |
                  (Age >= NormalRetRuleAge & YOS >= NormalYOSI) |
-                 (YOS + Age >= NormalRetRule) & ((Age-YOS)>=20), TRUE, FALSE)
+                 (YOS + Age >= NormalRetRule), TRUE, FALSE)
   return(Check)
 }
 
@@ -81,7 +81,7 @@ RetirementType <- function(Age, YOS){
   Check = ifelse((Age >= NormalRetAgeI & YOS >= NormalYOSI), "Normal No Rule of 90",
                 ifelse((Age >= NormalRetRuleAge) & (YOS + Age >= NormalRetRule), "Normal With Rule of 90",
                 ifelse((Age >= NormalRetRuleAge & YOS >= NormalYOSI) |
-                         (YOS + Age >= NormalRetRule) & ((Age-YOS)>=20), "Reduced","No")))
+                         (YOS + Age >= NormalRetRule), "Reduced","No")))
   
  return(Check)
 }
@@ -123,7 +123,7 @@ FemaleMP_ultimate <- FemaleMP %>%
 #Expand grid for ages 20-120 and years 2010 to 2121 (why 2121? Because 120 - 20 + 2021 = 2121)
 MortalityTable <- expand_grid(Age, Years)
 
-SurvivalRates <- SurvivalRates %>% mutate_all(as.numeric)
+SurvivalRates <- SurvivalRates %>% mutate_all(as.numeric)   #why do we need this step?
 
 #Join base mortality table with mortality improvement table and calculate the final mortality rates
 MortalityTable <- MortalityTable %>% 
@@ -175,7 +175,7 @@ SeparationRates <- expand_grid(Age, YOS) %>%
   ### Additions ###
   mutate_all(as.numeric) %>% 
   replace(is.na(.), 0) %>%
-  mutate(TermBefore5 = c(TermBefore5Under30 + TermBefore5B3039+ TermBefore5Over39))#Combine 3 Term rates into 1 final column
+  mutate(TermBefore5 = TermBefore5Under30 + TermBefore5B3039+ TermBefore5Over39)#Combine 3 Term rates into 1 final column
 
 #View(SeparationRates)
 
@@ -185,15 +185,16 @@ SeparationRates <- expand_grid(Age, YOS) %>%
 
 #If you're retirement eligible, use the retirement rates, then checks YOS < 5 and use the regular termination rates
 SeparationRates <- SeparationRates %>% 
-  mutate(retirement_cond = IsRetirementEligible(Age,YOS),
-         retirement_type = RetirementType(Age,YOS),
+  mutate(retirement_type = RetirementType(Age,YOS),
          
-         SepRateMale = ifelse(retirement_cond == T, ifelse(retirement_type == "Normal With Rule of 90", UnreducedRule90,
-                              ifelse(retirement_type == "Normal No Rule of 90", UnreducedNoRule90,Reduced)), #Using 3 ifelse statements for 3 retirement conditions                 
-         ifelse(YOS < 5, TermBefore5, TermAfter5)),
-         SepRateFemale = ifelse(retirement_cond == T, ifelse(retirement_type == "Normal With Rule of 90", UnreducedRule90,
-                                                             ifelse(retirement_type == "Normal No Rule of 90", UnreducedNoRule90,Reduced)), #Using 3 ifelse statements for 3 retirement conditions                
-                                ifelse(YOS < 5, TermBefore5, TermAfter5)),
+         SepRateMale = ifelse(retirement_type == "Normal With Rule of 90", UnreducedRule90,
+                              ifelse(retirement_type == "Normal No Rule of 90", UnreducedNoRule90,
+                                     ifelse(retirement_type == "Reduced", Reduced,     #Using 3 ifelse statements for 3 retirement conditions
+                                            ifelse(YOS < 5, TermBefore5, TermAfter5)))),
+         SepRateFemale = ifelse(retirement_type == "Normal With Rule of 90", UnreducedRule90,
+                                ifelse(retirement_type == "Normal No Rule of 90", UnreducedNoRule90,
+                                       ifelse(retirement_type == "Reduced", Reduced,     #Using 3 ifelse statements for 3 retirement conditions
+                                              ifelse(YOS < 5, TermBefore5, TermAfter5)))),
          SepRate = ((SepRateMale+SepRateFemale)/2)) %>% 
   group_by(entry_age) %>% 
   mutate(RemainingProb = cumprod(1 - lag(SepRate, default = 0)),
