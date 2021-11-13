@@ -202,7 +202,7 @@ SeparationRates <- SeparationRates %>%
   ungroup()
 
 #Filter out unecessary values
-SeparationRates <- SeparationRates %>% select(Age,YOS,SepProb)
+SeparationRates <- SeparationRates %>% select(Age, YOS, RemainingProb, SepProb)
 
 #Custom function to calculate cumulative future values
 cumFV <- function(interest, cashflow){
@@ -374,7 +374,7 @@ NC_aggregate
 ####### DC Account Balance 
 SalaryData2 <- SalaryData %>% 
   filter(entry_age == HiringAge) %>% 
-  select(Age, YOS, start_sal, salary_increase, Salary) %>% 
+  select(Age, YOS, start_sal, salary_increase, Salary, RemainingProb) %>% 
   mutate(DC_EEContrib = Salary * DC_EE_cont,
          DC_ERContrib = Salary * DC_ER_cont,
          DC_Contrib = DC_EEContrib + DC_ERContrib,

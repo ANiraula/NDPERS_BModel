@@ -202,7 +202,7 @@ SeparationRates <- SeparationRates %>%
   ungroup()
 
 #Filter out unecessary values
-SeparationRates <- SeparationRates %>% select(Age,YOS,SepProb)
+SeparationRates <- SeparationRates %>% select(Age, YOS, RemainingProb, SepProb)
 
 #Custom function to calculate cumulative future values
 cumFV <- function(interest, cashflow){
@@ -351,7 +351,7 @@ benefit_cal <- function(
   ####### DC & Hybrid Account Balance 
   SalaryData2 <- SalaryData %>% 
     filter(entry_age == ea) %>% 
-    select(Age, YOS, start_sal, salary_increase, Salary) %>% 
+    select(Age, YOS, start_sal, salary_increase, Salary, RemainingProb) %>% 
     mutate(DC_EEContrib = Salary * DC_EE,
            DC_ERContrib = Salary * DC_ER,
            DC_Contrib = DC_EEContrib + DC_ERContrib,
@@ -363,6 +363,9 @@ benefit_cal <- function(
   
   if (output == "NC") {
     return(NC_aggregate)
+  } else if (output == "attrition") {
+    return(SalaryData2 %>% 
+             select(Age, RemainingProb))
   } else if (output == "DB"){
     return(SalaryData2 %>% 
              select(Age, RealPenWealth))
@@ -376,11 +379,14 @@ benefit_cal <- function(
 }
 
 ## Test benefit function
+# 
 # NC <- benefit_cal()
 # NC2 <- benefit_cal(DB_ARR = 0.06, DB_mult = 0.01)
 # DB_4 <- benefit_cal(output = "DB", DB_ARR = 0.04, ea = 22)
 # DB_7 <- benefit_cal(output = "DB", DB_ARR = 0.07, ea = 22)
 # DC <- benefit_cal(output = "DC", DCreturn = 0.06, ea = 22)
+# attri <- benefit_cal(output = "attrition", ea = 22)
+# 
 # 
 # test <- DB_4 %>%
 #   left_join(DB_7, by = "Age") %>%
@@ -391,5 +397,7 @@ benefit_cal <- function(
 # 
 # ggplot(test, aes(x = Age, y = wealth, col = type)) +
 #   geom_line()
-
+# 
+# ggplot(attri, aes(x = Age, y = RemainingProb)) +
+#   geom_line()
 ##################################
