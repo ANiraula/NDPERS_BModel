@@ -235,162 +235,169 @@ SalaryData <- expand_grid(Age, YOS) %>%
 #View(SalaryData))
 #Calculate FAS and cumulative EE contributions
 #colnames(SalaryData)[7] <- "salary_increase"
-SalaryData <- SalaryData %>% 
+##### Normal Cost & Benefit Accrual Function
+benefit_cal <- function(
+  output = "NC", 
+  DB_ARR = ARR,
+  DB_EE = DB_EE_cont, 
+  DC_EE = DC_EE_cont,
+  DC_ER = DC_ER_cont,
+  DB_mult = BenMult,
+  DB_COLA = COLA,
+  ea = HiringAge,
+  DCreturn = DC_return) {
   
-  group_by(entry_age) %>% 
-  mutate(Salary = start_sal*cumprod(1+lag(salary_increase,default = 0)),
-         #Salary = pmin(Salary_gross, salary_cap),
-         # IRSSalaryCap = pmin(Salary,IRSCompLimit),
-         FinalAvgSalary = rollmean(lag(Salary), k = FinAvgSalaryYears, fill = NA, align = "right"),
-         EEContrib = DB_EE_cont*Salary,
-         DBEEBalance = cumFV(Interest, EEContrib),
-         CumulativeWage = cumFV(ARR, Salary)) %>% 
-  ungroup()
-
-
-#Survival Probability and Annuity Factor
-AnnFactorData <- MortalityTable %>% 
-  select(Age, entry_age, mort) %>%
-  group_by(entry_age) %>% 
-  mutate(surv = cumprod(1 - lag(mort, default = 0)),
-         surv_DR = surv/(1+ARR)^(Age - entry_age),
-         surv_DR_COLA = surv_DR * (1+COLA)^(Age - entry_age),
-         AnnuityFactor = rev(cumsum(rev(surv_DR_COLA)))/surv_DR_COLA) %>% 
-  ungroup()
-
-#View(data.frame(shift(AnnFactorData$surv_DR_COLA, n = 1:101, type = "lead")))
-
-### Additions -> Calculating:
-### 1. Earliest Age of Normal Retirement
-### 2. Calculating Years between Early Retirement & Normal Retirement
-### 3. Retirement Type
-### 4. A benefit that begins before age 65 (or Rule of 90, if earlier) is reduced by 2/3 of one percent for each month before the earlier of age 65 or the age at which the Rule of 90 is met.
-
-#Add entry_age to AnnFactorData + keep toNormRetYears
-########
-ReducedFactor <- expand_grid(Age, YOS) %>% 
-  arrange(YOS) %>% 
-  mutate(norm_retire = ifelse(RetirementType(Age, YOS) %in% c("Normal No Rule of 90", "Normal With Rule of 90"), 1, 0)) %>% 
-  group_by(YOS) %>% 
-  mutate(AgeNormRet = 120 - sum(norm_retire) + 1,     #This is the earliest age of normal retirement given the YOS
-         YearsNormRet = AgeNormRet - Age,
-         RetType = RetirementType(Age, YOS),
-         RF = ifelse(RetType == "Reduced", 1 - (2/3*12/100)*YearsNormRet,
-                     ifelse(RetType == "No", 0, 1))) %>% 
-  rename(RetirementAge = Age) %>% 
-  ungroup() 
-
-# 
-# ReducedFactor <- expand_grid(Age, YOS)
-#   
-# ReducedFactor$FirstRetAge <- ifelse(IsRetirementEligible(ReducedFactor$Age,ReducedFactor$YOS) == T & 
-#                                       RetirementType(ReducedFactor$Age,ReducedFactor$YOS) == "Reduced",
-#                                         ReducedFactor$Age,0)
-# 
-# ReducedFactor$RetType <- RetirementType(ReducedFactor$Age,ReducedFactor$YOS)
-# 
-# 
-# ReducedFactor$YearsNormRet <- ifelse(ReducedFactor$RetType == "Reduced" & ReducedFactor$Age < 60,
-#                                 (60- ReducedFactor$Age),
-#                         ifelse(ReducedFactor$RetType == "Reduced" & ReducedFactor$Age >= 60,
-#                                90-(ReducedFactor$Age+ReducedFactor$YOS),0))
-
-#### Saving results into ReducedFactor 
-
-### Updated* ###
-#((2/3*12/100) Per Years untill Normal Retirement (if qualifies for Reduced)) 
-
-##Adjusting code to use calculated YearsToNormRet column for early ret. penalties
-# ReducedFactor <- ReducedFactor %>% 
-#   mutate(RF = ifelse(RetType  == "Reduced",
-#                             (1 - ((2/3*12/100)*(YearsNormRet))),
-#                      ifelse(RetType  == "No",0,1))) %>%
-#   mutate(RF = ifelse(RF <0, 0, RF)) %>%
-#   rename(RetirementAge = Age)
-
-#View(ReducedFactor)
-
-# ReducedFactor_test <- ReducedFactor %>% pivot_wider(names_from = YOS, values_from = RF)
-
-#Benefits, Annuity Factor and Present Value 
-#system.time(
+  SalaryData <- SalaryData %>% 
+    
+    group_by(entry_age) %>% 
+    mutate(Salary = start_sal*cumprod(1+lag(salary_increase,default = 0)),
+           #Salary = pmin(Salary_gross, salary_cap),
+           # IRSSalaryCap = pmin(Salary,IRSCompLimit),
+           FinalAvgSalary = rollmean(lag(Salary), k = FinAvgSalaryYears, fill = NA, align = "right"),
+           EEContrib = DB_EE*Salary,
+           DBEEBalance = cumFV(Interest, EEContrib),
+           CumulativeWage = cumFV(DB_ARR, Salary)) %>% 
+    ungroup()
   
-BenefitsTable <- expand_grid(Age, YOS, RetirementAge) %>% 
-  mutate(entry_age = Age - YOS) %>% 
-  filter(entry_age %in% SalaryEntry$entry_age) %>% 
-  arrange(entry_age, Age, RetirementAge) %>% 
-  left_join(SalaryData, by = c("Age", "YOS", "entry_age")) %>% 
-  left_join(ReducedFactor %>% select(RetirementAge, YOS, RF), by = c("RetirementAge", "YOS")) %>%
-  left_join(AnnFactorData %>% select(Age, entry_age, surv_DR, AnnuityFactor), by = c("RetirementAge" = "Age", "entry_age")) %>%
-  #Rename surv_DR and AF to make clear that these variables are at retirement
-  rename(surv_DR_ret = surv_DR, AF_Ret = AnnuityFactor) %>% 
-  #Rejoin the table to get the surv_DR for the termination age
-  left_join(AnnFactorData %>% select(Age, entry_age, surv_DR), by = c("Age", "entry_age")) %>% 
-  mutate(ReducedFactMult = RF*BenMult, 
-         AnnFactorAdj = AF_Ret * surv_DR_ret / surv_DR,
-         PensionBenefit = ReducedFactMult * FinalAvgSalary*YOS,
-         PresentValue = ifelse(Age > RetirementAge, 0, PensionBenefit*AnnFactorAdj))
+  
+  #Survival Probability and Annuity Factor
+  AnnFactorData <- MortalityTable %>% 
+    select(Age, entry_age, mort) %>%
+    group_by(entry_age) %>% 
+    mutate(surv = cumprod(1 - lag(mort, default = 0)),
+           surv_DR = surv/(1+DB_ARR)^(Age - entry_age),
+           surv_DR_COLA = surv_DR * (1+DB_COLA)^(Age - entry_age),
+           AnnuityFactor = rev(cumsum(rev(surv_DR_COLA)))/surv_DR_COLA) %>% 
+    ungroup()
+  
+  #View(data.frame(shift(AnnFactorData$surv_DR_COLA, n = 1:101, type = "lead")))
+  
+  ### Reduced Factor calculation:
+  ### 1. Earliest Age of Normal Retirement
+  ### 2. Calculating Years between Early Retirement & Normal Retirement
+  ### 3. Retirement Type
+  ### 4. A benefit that begins before age 65 (or Rule of 90, if earlier) is reduced by 2/3 of one percent for each month before the earlier of age 65 or the age at which the Rule of 90 is met.
+  
+  #Add entry_age to AnnFactorData + keep toNormRetYears
+  ########
+  ReducedFactor <- expand_grid(Age, YOS) %>% 
+    arrange(YOS) %>% 
+    mutate(norm_retire = ifelse(RetirementType(Age, YOS) %in% c("Normal No Rule of 90", "Normal With Rule of 90"), 1, 0)) %>% 
+    group_by(YOS) %>% 
+    mutate(AgeNormRet = 120 - sum(norm_retire) + 1,     #This is the earliest age of normal retirement given the YOS
+           YearsNormRet = AgeNormRet - Age,
+           RetType = RetirementType(Age, YOS),
+           RF = ifelse(RetType == "Reduced", 1 - (2/3*12/100)*YearsNormRet,
+                       ifelse(RetType == "No", 0, 1))) %>% 
+    rename(RetirementAge = Age) %>% 
+    ungroup() 
+  
+  #Benefits, Annuity Factor and Present Value 
+  #system.time(
+  
+  BenefitsTable <- expand_grid(Age, YOS, RetirementAge) %>% 
+    mutate(entry_age = Age - YOS) %>% 
+    filter(entry_age %in% SalaryEntry$entry_age) %>% 
+    arrange(entry_age, Age, RetirementAge) %>% 
+    left_join(SalaryData, by = c("Age", "YOS", "entry_age")) %>% 
+    left_join(ReducedFactor %>% select(RetirementAge, YOS, RF), by = c("RetirementAge", "YOS")) %>%
+    left_join(AnnFactorData %>% select(Age, entry_age, surv_DR, AnnuityFactor), by = c("RetirementAge" = "Age", "entry_age")) %>%
+    #Rename surv_DR and AF to make clear that these variables are at retirement
+    rename(surv_DR_ret = surv_DR, AF_Ret = AnnuityFactor) %>% 
+    #Rejoin the table to get the surv_DR for the termination age
+    left_join(AnnFactorData %>% select(Age, entry_age, surv_DR), by = c("Age", "entry_age")) %>% 
+    mutate(ReducedFactMult = RF*DB_mult, 
+           AnnFactorAdj = AF_Ret * surv_DR_ret / surv_DR,
+           PensionBenefit = ReducedFactMult * FinalAvgSalary*YOS,
+           PresentValue = ifelse(Age > RetirementAge, 0, PensionBenefit*AnnFactorAdj))
+  
+  #)
+  
+  #For a given combination of entry age and termination age, the member is assumed to choose the retirement age that maximizes the PV of future retirement benefits. That value is the "optimum benefit". 
+  OptimumBenefit <- BenefitsTable %>% 
+    group_by(entry_age, Age) %>% 
+    summarise(MaxBenefit = max(PresentValue)) %>%
+    mutate(MaxBenefit = ifelse(is.na(MaxBenefit), 0, MaxBenefit)) %>% 
+    ungroup()
+  
+  ####### Benefit Accrual & Normal Cost #######
+  #### Real Pension Wealth = Pension Wealth adjusted for inflation
+  #### Actuarial PV of Pension Wealth = Pension Wealth 
+  #Combine optimal benefit with employee balance and calculate the PV of future benefits and salaries 
+  #####################################
+  SalaryData <- SalaryData %>% 
+    left_join(OptimumBenefit, by = c("Age", "entry_age")) %>% 
+    left_join(SeparationRates, by = c("Age", "YOS")) %>%
+    mutate(PenWealth = pmax(DBEEBalance,MaxBenefit),        #Members are assumed to elect the option with the greatest PV between a refund with interest and a deferred benefit
+           RealPenWealth = PenWealth/(1 + assum_infl)^YOS,
+           PVPenWealth = PenWealth/(1 + DB_ARR)^YOS * SepProb,
+           PVCumWage = CumulativeWage/(1 + DB_ARR)^YOS * SepProb)
+  
+  
+  #Calculate normal cost rate for each entry age
+  NormalCost <- SalaryData %>% 
+    group_by(entry_age) %>% 
+    summarise(normal_cost = sum(PVPenWealth)/sum(PVCumWage)) %>% 
+    ungroup()
+  
+  #View(NormalCost)
+  
+  #Calculate the aggregate normal cost
+  NC_aggregate <- sum(NormalCost$normal_cost * SalaryEntry$start_sal * SalaryEntry$count_start)/
+    sum(SalaryEntry$start_sal * SalaryEntry$count_start)
+  ################################
+  
+  
+  ####### DC & Hybrid Account Balance 
+  SalaryData2 <- SalaryData %>% 
+    filter(entry_age == ea) %>% 
+    select(Age, YOS, start_sal, salary_increase, Salary, RemainingProb) %>% 
+    mutate(DC_EEContrib = Salary * DC_EE,
+           DC_ERContrib = Salary * DC_ER,
+           DC_Contrib = DC_EEContrib + DC_ERContrib,
+           DC_balance = cumFV(DCreturn, DC_Contrib),
+           RealDC_balance = DC_balance/(1 + assum_infl)^YOS) %>% 
+    left_join(SalaryData %>% select(Age, YOS, RealPenWealth), by = c("Age", "YOS")) %>% 
+    mutate(RealHybridWealth = RealDC_balance + RealPenWealth) %>% 
+    filter(Age <= 80)
+  
+  if (output == "NC") {
+    return(NC_aggregate)
+  } else if (output == "attrition") {
+    return(SalaryData2 %>% 
+             select(Age, RemainingProb))
+  } else if (output == "DB"){
+    return(SalaryData2 %>% 
+             select(Age, RealPenWealth))
+  } else if (output == "DC") {
+    return(SalaryData2 %>% 
+             select(Age, RealDC_balance))
+  } else {
+    return(SalaryData2 %>% 
+             select(Age, RealHybridWealth))
+  }
+}
 
-#)
-
-#For a given combination of entry age and termination age, the member is assumed to choose the retirement age that maximizes the PV of future retirement benefits. That value is the "optimum benefit". 
-OptimumBenefit <- BenefitsTable %>% 
-  group_by(entry_age, Age) %>% 
-  summarise(MaxBenefit = max(PresentValue)) %>%
-  mutate(MaxBenefit = ifelse(is.na(MaxBenefit), 0, MaxBenefit)) %>% 
-  ungroup()
-
-####### Benefit Accrual & Normal Cost #######
-#### Real Pension Wealth = Pension Wealth adjusted for inflation
-#### Actuarial PV of Pension Wealth = Pension Wealth 
-#Combine optimal benefit with employee balance and calculate the PV of future benefits and salaries 
-#####################################
-SalaryData <- SalaryData %>% 
-  left_join(OptimumBenefit, by = c("Age", "entry_age")) %>% 
-  left_join(SeparationRates, by = c("Age", "YOS")) %>%
-  mutate(PenWealth = pmax(DBEEBalance,MaxBenefit),        #Members are assumed to elect the option with the greatest PV between a refund with interest and a deferred benefit
-         RealPenWealth = PenWealth/(1 + assum_infl)^YOS,
-         PVPenWealth = PenWealth/(1 + ARR)^YOS * SepProb,
-         PVCumWage = CumulativeWage/(1 + ARR)^YOS * SepProb)
-
-
-#Calculate normal cost rate for each entry age
-NormalCost <- SalaryData %>% 
-  group_by(entry_age) %>% 
-  summarise(normal_cost = sum(PVPenWealth)/sum(PVCumWage)) %>% 
-  ungroup()
-
-#View(NormalCost)
-
-#Calculate the aggregate normal cost
-NC_aggregate <- sum(NormalCost$normal_cost * SalaryEntry$start_sal * SalaryEntry$count_start)/
-  sum(SalaryEntry$start_sal * SalaryEntry$count_start)
-
-#Calculate the aggregate normal cost
-NC_aggregate
-################################
-
-
-####### DC Account Balance 
-SalaryData2 <- SalaryData %>% 
-  filter(entry_age == HiringAge) %>% 
-  select(Age, YOS, start_sal, salary_increase, Salary, RemainingProb) %>% 
-  mutate(DC_EEContrib = Salary * DC_EE_cont,
-         DC_ERContrib = Salary * DC_ER_cont,
-         DC_Contrib = DC_EEContrib + DC_ERContrib,
-         DC_balance = cumFV(DC_return, DC_Contrib),
-         RealDC_balance = DC_balance/(1 + assum_infl)^YOS) %>% 
-  left_join(SalaryData %>% select(Age, YOS, RealPenWealth), by = c("Age", "YOS")) %>% 
-  mutate(RealHybridWealth = RealDC_balance + RealPenWealth)
-
-
-
-## Graphing PWealth accrual
-ggplot(SalaryData, aes(Age,RealPenWealth/1000, group = entry_age, col = as.factor(entry_age)))+
-  geom_line(size = 1)+
-  theme_bw()+
-  scale_x_continuous(breaks = seq(0, 80, by = 10),labels = function(x) paste0(x), 
-                     name = "Age (Entry age at 27)", expand = c(0,0)) + 
-  scale_y_continuous(breaks = seq(0, 5000, by = 100),labels = function(x) paste0("$",x), 
-                     name = "Present Value of Pension Wealth ($Thousands)", expand = c(0,0)) 
+## Test benefit function
+# 
+# NC <- benefit_cal()
+# NC2 <- benefit_cal(DB_ARR = 0.06, DB_mult = 0.01)
+# DB_4 <- benefit_cal(output = "DB", DB_ARR = 0.04, ea = 22)
+# DB_7 <- benefit_cal(output = "DB", DB_ARR = 0.07, ea = 22)
+# DC <- benefit_cal(output = "DC", DCreturn = 0.06, ea = 22)
+# attri <- benefit_cal(output = "attrition", ea = 22)
+# 
+# 
+# test <- DB_4 %>%
+#   left_join(DB_7, by = "Age") %>%
+#   left_join(DC, by = "Age") %>%
+#   pivot_longer(cols = 2:4,
+#                names_to = "type",
+#                values_to = "wealth")
+# 
+# ggplot(test, aes(x = Age, y = wealth, col = type)) +
+#   geom_line()
+# 
+# ggplot(attri, aes(x = Age, y = RemainingProb)) +
+#   geom_line()
 ##################################
