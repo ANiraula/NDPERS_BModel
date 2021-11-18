@@ -338,7 +338,8 @@ ReducedFactor <- expand_grid(Age, YOS) %>%
          YearsNormRet = AgeNormRet - Age,
          RetType = RetirementType(Age, YOS),
          RF = ifelse(RetType == "Reduced", 1 - (2/3*12/100)*YearsNormRet,
-                     ifelse(RetType == "No", 0, 1))) %>% 
+                     ifelse(RetType == "No", 0, 1)),
+         RF = ifelse(RF <0,0,RF)) %>% 
   rename(RetirementAge = Age) %>% 
   ungroup() 
 
@@ -478,7 +479,7 @@ SalaryData2 <- data.frame(SalaryData2)
 SalaryData2$entry_age <- as.numeric(SalaryData2$entry_age)
 # #View(SalaryData2)
 # 
-SalaryData2 <- SalaryData2 %>% filter(entry_age == 22)
+SalaryData2 <- SalaryData2 %>% filter(entry_age == 27)
 SalaryData2 <- SalaryData2 %>% filter(Age < 81)
 SalaryData2$PVPenWealth <- as.numeric(SalaryData2$PVPenWealth)
 y_max <- max(SalaryData2$PVPenWealth)
@@ -488,7 +489,7 @@ y_max <- max(SalaryData2$PVPenWealth)
 pwealth <- ggplot(SalaryData2, aes(Age,PVPenWealth/1000))+
   geom_line(aes(group = 1,
                 text = paste0("Age: ", Age,
-                              "<br>Pension Wealth: $",round(PVPenWealth/1000,1), " Thousands")),size = 1.25, color = palette_reason$SatBlue)+
+                              "<br>DB Pension Wealth: $",round(PVPenWealth/1000,1), " Thousands")),size = 1.25, color = palette_reason$SatBlue)+
   geom_line(aes(Age, RealDC_balance/1000,
                 group = 2,
                 text = paste0("Age: ", Age,
