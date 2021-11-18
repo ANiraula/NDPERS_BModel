@@ -9,7 +9,7 @@ library(dplyr)
 library(zoo)
 #setwd(getwd())
 
-FileName <- 'NDPERS_BM_Inputs.xlsx'
+#FileName <- 'NDPERS_BM_Inputs.xlsx'
 FileName <- '/Users/anilniraula/databaseR/NDPERS_BM_Inputs.xlsx'
 #FileName <- "https://github.com/ANiraula/NDPERS_BModel/blob/main/NDPERS_BM_Inputs.xlsx?raw=true"
 
@@ -50,6 +50,7 @@ select(entry_age, start_sal, count_start)#Updated*
 TerminationRateAfter5 <- read_excel(FileName, sheet = 'Termination Rates after 5')#Updated*
 TerminationRateBefore5 <- read_excel(FileName, sheet = 'Termination Rates before 5')#Updated*
 RetirementRates <- read_excel(FileName, sheet = 'Retirement Rates')#Updated*
+#View(TerminationRateBefore5)
 #View(RetirementRates)
 
 ### Adding scaling factors
