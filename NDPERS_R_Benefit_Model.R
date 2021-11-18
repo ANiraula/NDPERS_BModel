@@ -9,13 +9,9 @@ library(dplyr)
 library(zoo)
 #setwd(getwd())
 
-<<<<<<< HEAD
+
 #FileName <- 'NDPERS_BM_Inputs.xlsx'
 FileName <- '/Users/anilniraula/databaseR/NDPERS_BM_Inputs.xlsx'
-=======
-FileName <- 'NDPERS_BM_Inputs.xlsx'
-# FileName <- '/Users/anilniraula/databaseR/NDPERS_BM_Inputs.xlsx'
->>>>>>> fa69663791e3e0432b77da5a340073796fb67c70
 #FileName <- "https://github.com/ANiraula/NDPERS_BModel/blob/main/NDPERS_BM_Inputs.xlsx?raw=true"
 
 #urlfile="https://github.com/ANiraula/NDPERS_BModel/blob/main/NDPERS_BM_Inputs.xlsx?raw=true"
@@ -92,18 +88,6 @@ RetirementType <- function(Age, YOS){
  return(Check)
 }
 
-#### Considering using new rule to get Min Normal Retirement Age
-# NormalRetirement <- function(data, Age, YOS){
-#     data <- data %>% group_by(entry_age) %>%
-#     mutate(Check = ifelse(IsRetirementEligible(Age,YOS) == T, 
-#                    ifelse(RetirementType(Age,YOS) == "Normal With Rule of 90" |
-#                           RetirementType(Age,YOS) == "Normal With Rule of 90",
-#                         min(Age),0),0))
-#     
-#     return(Check)
-# }
-
-
 #These rates dont change so they're outside the function
 #Transform base mortality rates and mortality improvement rates
 MaleMP <- MaleMP %>% 
@@ -131,33 +115,84 @@ MortalityTable <- expand_grid(Age, Years)
 
 SurvivalRates <- SurvivalRates %>% mutate_all(as.numeric)   #why do we need this step?
 
-#Join base mortality table with mortality improvement table and calculate the final mortality rates
-MortalityTable <- MortalityTable %>% 
-  left_join(SurvivalRates, by = "Age") %>% 
-  left_join(MaleMP, by = c("Age", "Years")) %>% 
-  left_join(FemaleMP, by = c("Age", "Years")) %>% 
-  left_join(MaleMP_ultimate, by = "Age") %>% 
-  left_join(FemaleMP_ultimate, by = "Age") %>% 
-  mutate(MaleMP_final = ifelse(Years > max(MaleMP$Years), MP_ultimate_male, MP_male),
-         FemaleMP_final = ifelse(Years > max(FemaleMP$Years),  MP_ultimate_female, MP_female),
-         entry_age = Age - (Years - YearStart),
-         YOS = Age - entry_age) %>% 
-  group_by(Age) %>%
+
+##### Mortality Function #####
+### Automate into a package ###
+
+mortality <- function(data = MortalityTable,
+                      SurvivalRates = SurvivalRates,
+                      MaleMP = MaleMP,
+                      FemaleMP = FemaleMP,
+                      MaleMP_ultimate = MaleMP_ultimate,
+                      FemaleMP_ultimate = FemaleMP_ultimate
+                      ){
   
-  #MPcumprod is the cumulative product of (1 - MP rates), starting from 2011. We use it later so make life easy and calculate now
-  mutate(MPcumprod_male = cumprod(1 - MaleMP_final),
-         #Started mort. table from 2011 (instead of 2010) 
-         #to cumsum over 2011+ & then multiply by 2010 MP-2019
-         #removed /(1 - MaleMP_final[Years == 2010])
-         MPcumprod_female = cumprod(1 - FemaleMP_final),
-         mort_male = ifelse(IsRetirementEligible(Age, YOS)==F, PubG_2010_employee_male * ScaleMultipleMaleAct, #Adding adj. facctors
-                            PubG_2010_healthy_retiree_male * ScaleMultipleMaleRet) * MPcumprod_male,
-         mort_female = ifelse(IsRetirementEligible(Age, YOS)==F, PubG_2010_employee_female * ScaleMultipleFemaleAct,
-                              PubG_2010_healthy_retiree_female * ScaleMultipleFemaleRet) * MPcumprod_female,
-         mort = (mort_male + mort_female)/2) %>% 
-         #Recalcualting average
-  filter(Years >= 2021, entry_age >= 20) %>% 
-  ungroup()
+  MortalityTable <- data %>% 
+    left_join(SurvivalRates, by = "Age") %>% 
+    left_join(MaleMP, by = c("Age", "Years")) %>% 
+    left_join(FemaleMP, by = c("Age", "Years")) %>% 
+    left_join(MaleMP_ultimate, by = "Age") %>% 
+    left_join(FemaleMP_ultimate, by = "Age") %>% 
+    mutate(MaleMP_final = ifelse(Years > max(MaleMP$Years), MP_ultimate_male, MP_male),
+           FemaleMP_final = ifelse(Years > max(FemaleMP$Years),  MP_ultimate_female, MP_female),
+           entry_age = Age - (Years - YearStart),
+           YOS = Age - entry_age) %>% 
+    group_by(Age) %>%
+    
+    #MPcumprod is the cumulative product of (1 - MP rates), starting from 2011. We use it later so make life easy and calculate now
+    mutate(MPcumprod_male = cumprod(1 - MaleMP_final),
+           #Started mort. table from 2011 (instead of 2010) 
+           #to cumsum over 2011+ & then multiply by 2010 MP-2019
+           #removed /(1 - MaleMP_final[Years == 2010])
+           MPcumprod_female = cumprod(1 - FemaleMP_final),
+           mort_male = ifelse(IsRetirementEligible(Age, YOS)==F, PubG_2010_employee_male * ScaleMultipleMaleAct, #Adding adj. facctors
+                              PubG_2010_healthy_retiree_male * ScaleMultipleMaleRet) * MPcumprod_male,
+           mort_female = ifelse(IsRetirementEligible(Age, YOS)==F, PubG_2010_employee_female * ScaleMultipleFemaleAct,
+                                PubG_2010_healthy_retiree_female * ScaleMultipleFemaleRet) * MPcumprod_female,
+           mort = (mort_male + mort_female)/2) %>% 
+    #Recalcualting average
+    filter(Years >= 2021, entry_age >= 20) %>% 
+    ungroup()
+  
+  MortalityTable
+  
+}
+
+##### Mortality Function #####
+MortalityTable <- mortality(data = MortalityTable,
+                      SurvivalRates = SurvivalRates,
+                      MaleMP = MaleMP,
+                      FemaleMP = FemaleMP,
+                      MaleMP_ultimate = MaleMP_ultimate,
+                      FemaleMP_ultimate = FemaleMP_ultimate)
+
+#Join base mortality table with mortality improvement table and calculate the final mortality rates
+# MortalityTable <- MortalityTable %>% 
+#   left_join(SurvivalRates, by = "Age") %>% 
+#   left_join(MaleMP, by = c("Age", "Years")) %>% 
+#   left_join(FemaleMP, by = c("Age", "Years")) %>% 
+#   left_join(MaleMP_ultimate, by = "Age") %>% 
+#   left_join(FemaleMP_ultimate, by = "Age") %>% 
+#   mutate(MaleMP_final = ifelse(Years > max(MaleMP$Years), MP_ultimate_male, MP_male),
+#          FemaleMP_final = ifelse(Years > max(FemaleMP$Years),  MP_ultimate_female, MP_female),
+#          entry_age = Age - (Years - YearStart),
+#          YOS = Age - entry_age) %>% 
+#   group_by(Age) %>%
+#   
+#   #MPcumprod is the cumulative product of (1 - MP rates), starting from 2011. We use it later so make life easy and calculate now
+#   mutate(MPcumprod_male = cumprod(1 - MaleMP_final),
+#          #Started mort. table from 2011 (instead of 2010) 
+#          #to cumsum over 2011+ & then multiply by 2010 MP-2019
+#          #removed /(1 - MaleMP_final[Years == 2010])
+#          MPcumprod_female = cumprod(1 - FemaleMP_final),
+#          mort_male = ifelse(IsRetirementEligible(Age, YOS)==F, PubG_2010_employee_male * ScaleMultipleMaleAct, #Adding adj. facctors
+#                             PubG_2010_healthy_retiree_male * ScaleMultipleMaleRet) * MPcumprod_male,
+#          mort_female = ifelse(IsRetirementEligible(Age, YOS)==F, PubG_2010_employee_female * ScaleMultipleFemaleAct,
+#                               PubG_2010_healthy_retiree_female * ScaleMultipleFemaleRet) * MPcumprod_female,
+#          mort = (mort_male + mort_female)/2) %>% 
+#          #Recalcualting average
+#   filter(Years >= 2021, entry_age >= 20) %>% 
+#   ungroup()
 
 #############
 #############
@@ -211,6 +246,9 @@ SeparationRates <- SeparationRates %>%
 SeparationRates <- SeparationRates %>% select(Age, YOS, RemainingProb, SepProb)
 
 #Custom function to calculate cumulative future values
+
+### Automate into a package ###
+
 cumFV <- function(interest, cashflow){
   cumvalue <- double(length = length(cashflow))
   for (i in 2:length(cumvalue)) {
@@ -237,8 +275,6 @@ SalaryData <- expand_grid(Age, YOS) %>%
 #################
 #################
 
-
-#View(SalaryData))
 #Calculate FAS and cumulative EE contributions
 #colnames(SalaryData)[7] <- "salary_increase"
 SalaryData <- SalaryData %>% 
@@ -255,14 +291,34 @@ SalaryData <- SalaryData %>%
 
 
 #Survival Probability and Annuity Factor
-AnnFactorData <- MortalityTable %>% 
-  select(Age, entry_age, mort) %>%
-  group_by(entry_age) %>% 
-  mutate(surv = cumprod(1 - lag(mort, default = 0)),
-         surv_DR = surv/(1+ARR)^(Age - entry_age),
-         surv_DR_COLA = surv_DR * (1+COLA)^(Age - entry_age),
-         AnnuityFactor = rev(cumsum(rev(surv_DR_COLA)))/surv_DR_COLA) %>% 
-  ungroup()
+#View(MortalityTable)
+AnnuityF <- function(data = MortalityTable,
+                     ColaType = "Simple"){
+  
+  AnnFactorData <- MortalityTable %>% 
+    select(Age, entry_age, mort) %>%
+    group_by(entry_age) %>% 
+    mutate(surv = cumprod(1 - lag(mort, default = 0)),
+           surv_DR = surv/(1+ARR)^(Age - entry_age),
+           surv_DR_COLA = surv_DR * ifelse(ColaType == "Simple", 1+(COLA * (Age - entry_age)), (1+COLA)^(Age - entry_age)),
+           AnnuityFactor = rev(cumsum(rev(surv_DR_COLA)))/surv_DR_COLA) %>% 
+    ungroup()
+  
+  AnnFactorData
+  
+}
+
+AnnFactorData <- AnnuityF(data = MortalityTable,
+                     ColaType = "Compound")
+
+# AnnFactorData <- MortalityTable %>% 
+#   select(Age, entry_age, mort) %>%
+#   group_by(entry_age) %>% 
+#   mutate(surv = cumprod(1 - lag(mort, default = 0)),
+#          surv_DR = surv/(1+ARR)^(Age - entry_age),
+#          surv_DR_COLA = surv_DR * (1+COLA)^(Age - entry_age),
+#          AnnuityFactor = rev(cumsum(rev(surv_DR_COLA)))/surv_DR_COLA) %>% 
+#   ungroup()
 
 #View(data.frame(shift(AnnFactorData$surv_DR_COLA, n = 1:101, type = "lead")))
 
@@ -376,11 +432,10 @@ NC_aggregate <- sum(NormalCost$normal_cost * SalaryEntry$start_sal * SalaryEntry
 NC_aggregate
 ################################
 
-
 ####### DC Account Balance 
 SalaryData2 <- SalaryData %>% 
   filter(entry_age == HiringAge) %>% 
-  select(Age, YOS, start_sal, salary_increase, Salary, RemainingProb) %>% 
+  select(Age, YOS, entry_age, start_sal, salary_increase, Salary, RemainingProb) %>% 
   mutate(DC_EEContrib = Salary * DC_EE_cont,
          DC_ERContrib = Salary * DC_ER_cont,
          DC_Contrib = DC_EEContrib + DC_ERContrib,
@@ -390,8 +445,9 @@ SalaryData2 <- SalaryData %>%
   mutate(RealHybridWealth = RealDC_balance + RealPenWealth)
 
 
+#View(SalaryData)
+## Graphing PWealth accrual [ALL ENTRY AGES]
 
-## Graphing PWealth accrual
 ggplot(SalaryData, aes(Age,RealPenWealth/1000, group = entry_age, col = as.factor(entry_age)))+
   geom_line(size = 1)+
   theme_bw()+
@@ -400,3 +456,65 @@ ggplot(SalaryData, aes(Age,RealPenWealth/1000, group = entry_age, col = as.facto
   scale_y_continuous(breaks = seq(0, 5000, by = 100),labels = function(x) paste0("$",x), 
                      name = "Present Value of Pension Wealth ($Thousands)", expand = c(0,0)) 
 ##################################
+
+
+######### Graphing SINGLE ENTRY AGE + RETENTION
+palette_reason <- list(Orange="#FF6633",
+                       LightOrange="#FF9900",
+                       DarkGrey="#333333", 
+                       LightGrey= "#CCCCCC", 
+                       SpaceGrey ="#A69FA1",
+                       DarkBlue="#0066CC", 
+                       GreyBlue= "#6699CC", 
+                       Yellow= "#FFCC33",
+                       LightBlue = "#66B2FF", 
+                       SatBlue = "#3366CC", 
+                       Green = "#669900",LightGreen = "#00CC66", Red = "#CC0000",LightRed="#FF0000")
+
+
+colnames(SalaryData2)[13] <- "PVPenWealth"
+e.age <- unique(SalaryData2$entry_age)
+SalaryData2 <- data.frame(SalaryData2)
+SalaryData2$entry_age <- as.numeric(SalaryData2$entry_age)
+# #View(SalaryData2)
+# 
+SalaryData2 <- SalaryData2 %>% filter(entry_age == 22)
+SalaryData2 <- SalaryData2 %>% filter(Age < 81)
+SalaryData2$PVPenWealth <- as.numeric(SalaryData2$PVPenWealth)
+y_max <- max(SalaryData2$PVPenWealth)
+
+
+####
+pwealth <- ggplot(SalaryData2, aes(Age,PVPenWealth/1000))+
+  geom_line(aes(group = 1,
+                text = paste0("Age: ", Age,
+                              "<br>Pension Wealth: $",round(PVPenWealth/1000,1), " Thousands")),size = 1.25, color = palette_reason$SatBlue)+
+  geom_line(aes(Age, RealDC_balance/1000,
+                group = 2,
+                text = paste0("Age: ", Age,
+                              "<br>DC Wealth: $", round(RealDC_balance/1000,1), " Thousands")), size = 1.25, color = palette_reason$Orange)+
+  geom_line(aes(Age, RemainingProb* (y_max/1000),
+                group = 3,
+                text = paste0("Age: ", Age,
+                              "<br>Members Remaining: ", round(RemainingProb*100,1), "%")), size = 1.25, color = palette_reason$LightBlue, linetype = "dashed")+
+  scale_x_continuous(breaks = seq(0, 80, by = 10),labels = function(x) paste0(x),
+                     name = paste0("Age (Entry age at 22 )"), expand = c(0,0)) +
+  
+  scale_y_continuous(breaks = seq(0, 5000, by = 100),limits = c(0, y_max/1000*1.1), labels = function(x) paste0("$",x),
+                     sec.axis = sec_axis(~./(y_max/100), breaks = scales::pretty_breaks(n = 10), name = "Percent of Members Remaining",
+                                         labels = function(b) paste0(round(b, 0), "%")), 
+                     name = "Present Value of Pension Wealth ($Thousands)", expand = c(0,0)) +
+  theme_bw()+
+  theme(   #panel.grid.major = element_blank(),
+    #panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"),
+    plot.margin = margin(0.5, 0.5,0.5,0.5, "cm"),
+    axis.text.y = element_text(size=11, color = "black"),
+    axis.text.y.right = element_text(size=11, color = "black"),
+    axis.text.y.left = element_text(size=11, color = "black"),
+    axis.text.x = element_text(size=11, color = "black"),
+    legend.title = element_text(size = 9, colour = "black", face = "bold"))
+
+library(plotly)
+ggplotly(pwealth, tooltip = c("text"))
+
+#######################
