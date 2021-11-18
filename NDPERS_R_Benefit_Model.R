@@ -458,64 +458,64 @@ ggplot(SalaryData, aes(Age,RealPenWealth/1000, group = entry_age, col = as.facto
                      name = "Present Value of Pension Wealth ($Thousands)", expand = c(0,0)) 
 ##################################
 
-
 ######### Graphing SINGLE ENTRY AGE + RETENTION
-palette_reason <- list(Orange="#FF6633",
-                       LightOrange="#FF9900",
-                       DarkGrey="#333333", 
-                       LightGrey= "#CCCCCC", 
-                       SpaceGrey ="#A69FA1",
-                       DarkBlue="#0066CC", 
-                       GreyBlue= "#6699CC", 
-                       Yellow= "#FFCC33",
-                       LightBlue = "#66B2FF", 
-                       SatBlue = "#3366CC", 
-                       Green = "#669900",LightGreen = "#00CC66", Red = "#CC0000",LightRed="#FF0000")
 
-
-colnames(SalaryData2)[13] <- "PVPenWealth"
-e.age <- unique(SalaryData2$entry_age)
-SalaryData2 <- data.frame(SalaryData2)
-SalaryData2$entry_age <- as.numeric(SalaryData2$entry_age)
-# #View(SalaryData2)
+# palette_reason <- list(Orange="#FF6633",
+#                        LightOrange="#FF9900",
+#                        DarkGrey="#333333", 
+#                        LightGrey= "#CCCCCC", 
+#                        SpaceGrey ="#A69FA1",
+#                        DarkBlue="#0066CC", 
+#                        GreyBlue= "#6699CC", 
+#                        Yellow= "#FFCC33",
+#                        LightBlue = "#66B2FF", 
+#                        SatBlue = "#3366CC", 
+#                        Green = "#669900",LightGreen = "#00CC66", Red = "#CC0000",LightRed="#FF0000")
 # 
-SalaryData2 <- SalaryData2 %>% filter(entry_age == 27)
-SalaryData2 <- SalaryData2 %>% filter(Age < 81)
-SalaryData2$PVPenWealth <- as.numeric(SalaryData2$PVPenWealth)
-y_max <- max(SalaryData2$PVPenWealth)
-
-
-####
-pwealth <- ggplot(SalaryData2, aes(Age,PVPenWealth/1000))+
-  geom_line(aes(group = 1,
-                text = paste0("Age: ", Age,
-                              "<br>DB Pension Wealth: $",round(PVPenWealth/1000,1), " Thousands")),size = 1.25, color = palette_reason$SatBlue)+
-  geom_line(aes(Age, RealDC_balance/1000,
-                group = 2,
-                text = paste0("Age: ", Age,
-                              "<br>DC Wealth: $", round(RealDC_balance/1000,1), " Thousands")), size = 1.25, color = palette_reason$Orange)+
-  geom_line(aes(Age, RemainingProb* (y_max/1000),
-                group = 3,
-                text = paste0("Age: ", Age,
-                              "<br>Members Remaining: ", round(RemainingProb*100,1), "%")), size = 1.25, color = palette_reason$LightBlue, linetype = "dashed")+
-  scale_x_continuous(breaks = seq(0, 80, by = 10),labels = function(x) paste0(x),
-                     name = paste0("Age (Entry age at 22 )"), expand = c(0,0)) +
-  
-  scale_y_continuous(breaks = seq(0, 5000, by = 100),limits = c(0, y_max/1000*1.1), labels = function(x) paste0("$",x),
-                     sec.axis = sec_axis(~./(y_max/100), breaks = scales::pretty_breaks(n = 10), name = "Percent of Members Remaining",
-                                         labels = function(b) paste0(round(b, 0), "%")), 
-                     name = "Present Value of Pension Wealth ($Thousands)", expand = c(0,0)) +
-  theme_bw()+
-  theme(   #panel.grid.major = element_blank(),
-    #panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"),
-    plot.margin = margin(0.5, 0.5,0.5,0.5, "cm"),
-    axis.text.y = element_text(size=11, color = "black"),
-    axis.text.y.right = element_text(size=11, color = "black"),
-    axis.text.y.left = element_text(size=11, color = "black"),
-    axis.text.x = element_text(size=11, color = "black"),
-    legend.title = element_text(size = 9, colour = "black", face = "bold"))
-
-library(plotly)
-ggplotly(pwealth, tooltip = c("text"))
+# 
+# colnames(SalaryData2)[13] <- "PVPenWealth"
+# e.age <- unique(SalaryData2$entry_age)
+# SalaryData2 <- data.frame(SalaryData2)
+# SalaryData2$entry_age <- as.numeric(SalaryData2$entry_age)
+# # #View(SalaryData2)
+# # 
+# SalaryData2 <- SalaryData2 %>% filter(entry_age == 27)
+# SalaryData2 <- SalaryData2 %>% filter(Age < 81)
+# SalaryData2$PVPenWealth <- as.numeric(SalaryData2$PVPenWealth)
+# y_max <- max(SalaryData2$PVPenWealth)
+# 
+# 
+# ####
+# pwealth <- ggplot(SalaryData2, aes(Age,PVPenWealth/1000))+
+#   geom_line(aes(group = 1,
+#                 text = paste0("Age: ", Age,
+#                               "<br>DB Pension Wealth: $",round(PVPenWealth/1000,1), " Thousands")),size = 1.25, color = palette_reason$SatBlue)+
+#   geom_line(aes(Age, RealDC_balance/1000,
+#                 group = 2,
+#                 text = paste0("Age: ", Age,
+#                               "<br>DC Wealth: $", round(RealDC_balance/1000,1), " Thousands")), size = 1.25, color = palette_reason$Orange)+
+#   geom_line(aes(Age, RemainingProb* (y_max/1000),
+#                 group = 3,
+#                 text = paste0("Age: ", Age,
+#                               "<br>Members Remaining: ", round(RemainingProb*100,1), "%")), size = 1.25, color = palette_reason$LightBlue, linetype = "dashed")+
+#   scale_x_continuous(breaks = seq(0, 80, by = 10),labels = function(x) paste0(x),
+#                      name = paste0("Age (Entry age at 22 )"), expand = c(0,0)) +
+#   
+#   scale_y_continuous(breaks = seq(0, 5000, by = 100),limits = c(0, y_max/1000*1.1), labels = function(x) paste0("$",x),
+#                      sec.axis = sec_axis(~./(y_max/100), breaks = scales::pretty_breaks(n = 10), name = "Percent of Members Remaining",
+#                                          labels = function(b) paste0(round(b, 0), "%")), 
+#                      name = "Present Value of Pension Wealth ($Thousands)", expand = c(0,0)) +
+#   theme_bw()+
+#   theme(   #panel.grid.major = element_blank(),
+#     #panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"),
+#     plot.margin = margin(0.5, 0.5,0.5,0.5, "cm"),
+#     axis.text.y = element_text(size=11, color = "black"),
+#     axis.text.y.right = element_text(size=11, color = "black"),
+#     axis.text.y.left = element_text(size=11, color = "black"),
+#     axis.text.x = element_text(size=11, color = "black"),
+#     legend.title = element_text(size = 9, colour = "black", face = "bold"))
+# 
+# library(plotly)
+# ggplotly(pwealth, tooltip = c("text"))
 
 #######################
